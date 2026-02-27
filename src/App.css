@@ -1,0 +1,276 @@
+/* ── Reset & base ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0f1117;
+  --surface:  #1a1d27;
+  --surface2: #23273a;
+  --accent:   #6c63ff;
+  --accent2:  #ff6584;
+  --text:     #e8eaf0;
+  --muted:    #7a7f9a;
+  --key-white: #f5f3ee;
+  --key-black: #1e1e2e;
+  --key-active: #6c63ff;
+  --key-black-active: #a29bfe;
+  --radius:   14px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100dvh;
+  overscroll-behavior: none;
+}
+
+#root {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 0 env(safe-area-inset-bottom);
+}
+
+/* ── App shell ────────────────────────────────────────────── */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding: 1.25rem 1rem 1.5rem;
+  gap: 1.25rem;
+}
+
+/* ── Header ───────────────────────────────────────────────── */
+.app-header { text-align: center; }
+.app-header h1 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; }
+
+/* ── Big note display ─────────────────────────────────────── */
+.note-display {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.25rem 1rem;
+  text-align: center;
+  border: 2px solid transparent;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative;
+}
+.note-display-active {
+  border-color: var(--accent);
+  background: var(--surface2);
+}
+.note-name {
+  font-size: clamp(4rem, 20vw, 7rem);
+  font-weight: 800;
+  line-height: 1;
+  display: block;
+  color: var(--text);
+  transition: color 0.15s;
+}
+.note-display-active .note-name { color: var(--accent); }
+.note-octave {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+/* ── Piano keyboard ───────────────────────────────────────── */
+.piano-wrapper {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.octave {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.keys-container {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: clamp(80px, 22vw, 130px);
+}
+
+.key-white {
+  flex: 1;
+  background: var(--key-white);
+  border-radius: 0 0 6px 6px;
+  border: 1.5px solid #ccc;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 6px;
+  cursor: default;
+  transition: background 0.15s;
+  position: relative;
+  z-index: 1;
+}
+.key-white-active {
+  background: var(--key-active) !important;
+  border-color: var(--accent);
+}
+.key-white-active .key-label { color: #fff; }
+
+.key-label {
+  font-size: clamp(0.5rem, 2vw, 0.75rem);
+  font-weight: 600;
+  color: #444;
+  user-select: none;
+}
+
+.key-black {
+  position: absolute;
+  top: 0;
+  width: calc(100% / 7 * 0.65);
+  height: 60%;
+  background: var(--key-black);
+  border-radius: 0 0 5px 5px;
+  border: 1.5px solid #000;
+  z-index: 2;
+  cursor: default;
+  transition: background 0.15s;
+  transform: translateX(-50%);
+}
+.key-black-active {
+  background: var(--key-black-active) !important;
+}
+
+.octave-label {
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+/* ── Note history ─────────────────────────────────────────── */
+.history-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+}
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.history-header h2 { font-size: 0.9rem; font-weight: 600; color: var(--muted); }
+
+.btn-clear {
+  background: transparent;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btn-clear:disabled { opacity: 0.3; cursor: default; }
+.btn-clear:not(:disabled):hover { border-color: var(--text); color: var(--text); }
+
+.history-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.history-scroll::-webkit-scrollbar { display: none; }
+
+.history-strip {
+  display: flex;
+  gap: 6px;
+  padding: 2px 0 4px;
+  white-space: nowrap;
+}
+.history-note {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 8px;
+  background: var(--surface2);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.history-note-current {
+  background: var(--accent);
+  color: #fff;
+  transform: scale(1.1);
+}
+
+.history-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 0.5rem 0;
+}
+
+/* ── Error banner ─────────────────────────────────────────── */
+.error-banner {
+  background: #3b1f1f;
+  border: 1px solid #7a2a2a;
+  border-radius: var(--radius);
+  color: #ffaaaa;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+/* ── Controls ─────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  justify-content: center;
+}
+
+.btn-start, .btn-stop {
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 0.9rem 2.5rem;
+  border-radius: 50px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.15s;
+  letter-spacing: 0.3px;
+  touch-action: manipulation;
+}
+.btn-start:active, .btn-stop:active { transform: scale(0.97); }
+
+.btn-start {
+  background: linear-gradient(135deg, var(--accent), #9b59b6);
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(108,99,255,0.4);
+}
+.btn-stop {
+  background: var(--surface2);
+  color: var(--accent2);
+  border: 2px solid var(--accent2);
+}
+
+/* ── Footer ───────────────────────────────────────────────── */
+.app-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  margin-top: auto;
+}
+
+/* ── Responsive tweaks ────────────────────────────────────── */
+@media (max-width: 380px) {
+  .app { padding: 1rem 0.75rem 1.25rem; }
+  .app-header h1 { font-size: 1.5rem; }
+}
