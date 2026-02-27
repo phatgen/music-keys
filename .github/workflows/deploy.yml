@@ -2,8 +2,11 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, master]   # deploy whenever main/master is updated
-  workflow_dispatch:            # also allow manual trigger from GitHub UI
+    branches:
+      - main
+      - master
+      - 'claude/**'            # also deploy from Claude feature branches
+  workflow_dispatch:            # allow manual trigger from GitHub Actions tab
 
 permissions:
   contents: read
