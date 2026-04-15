@@ -592,66 +592,6 @@ h1 {
   outline: none;
 }
 
-.song-card-viewer {
-  border-top: 1px solid var(--surface2);
-  padding: 0.75rem 0.85rem 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-/* Step navigator */
-.song-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.song-nav-btn {
-  background: var(--surface2);
-  border: none;
-  color: var(--text);
-  font-size: 1.4rem;
-  line-height: 1;
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 8px;
-  cursor: pointer;
-  flex-shrink: 0;
-  touch-action: manipulation;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.song-nav-btn:disabled { opacity: 0.25; cursor: default; }
-.song-nav-btn:not(:disabled):active { background: var(--accent); }
-
-.song-nav-label {
-  flex: 1;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0.3rem;
-  font-size: 1.1rem;
-}
-
-.song-nav-label strong {
-  font-size: 1.5rem;
-  font-weight: 900;
-  color: var(--accent);
-}
-
-.song-nav-octave {
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.song-nav-pos {
-  font-size: 0.75rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  margin-left: 0.4rem;
-}
 
 /* ── Save bottom sheet ────────────────────────────────────── */
 .overlay-backdrop {

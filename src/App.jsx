@@ -8,7 +8,7 @@ import { PlayMode } from './PlayMode';
 import './App.css';
 
 export default function App() {
-  const { note, history, isListening, isRequesting, status, error, volBarRef, debugRef, start, stop, clearHistory } = usePitchDetector();
+  const { note, history, isListening, isRequesting, status, error, volBarRef, debugRef, start, stop, clearHistory, loadHistory } = usePitchDetector();
   const { songs, loading: songsLoading, error: songsError, apiUrl, setApiUrl, saveSong, deleteSong, renameSong } = useSongLibrary();
 
   const [tab,      setTab]      = useState('listen');
@@ -177,7 +177,12 @@ export default function App() {
       {/* ═══════════════════════════════════════════════════════ LIBRARY TAB */}
       {tab === 'library' && (
         <div className="library-view">
-          <SongLibrary songs={songs} loading={songsLoading} error={songsError} apiUrl={apiUrl} onSetApiUrl={setApiUrl} onDelete={deleteSong} onRename={renameSong} />
+          <SongLibrary
+            songs={songs} loading={songsLoading} error={songsError}
+            apiUrl={apiUrl} onSetApiUrl={setApiUrl}
+            onDelete={deleteSong} onRename={renameSong}
+            onOpen={song => { loadHistory(song.notes); setTab('listen'); }}
+          />
         </div>
       )}
 

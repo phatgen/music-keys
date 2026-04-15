@@ -203,11 +203,16 @@ export function usePitchDetector() {
     lastEmitRef.current = null;
   }, []);
 
+  const loadHistory = useCallback((notes) => {
+    setHistory(notes);
+    lastEmitRef.current = null;
+  }, []);
+
   const isListening  = status === 'listening';
   const isRequesting = status === 'requesting';
 
   return {
     note, history, isListening, isRequesting, status,
-    error, volBarRef, debugRef, start, stop, clearHistory,
+    error, volBarRef, debugRef, start, stop, clearHistory, loadHistory,
   };
 }

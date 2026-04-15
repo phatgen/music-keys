@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { SheetMusic }    from './SheetMusic';
-import { PianoKeyboard } from './PianoKeyboard';
 
 const API_URL_KEY     = 'piano-helper-api-url';
 const DEFAULT_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -99,31 +97,20 @@ export function useSongLibrary() {
 
 // ── Single song card ─────────────────────────────────────────────────────────
 
-function SongCard({ song, onDelete, onRename }) {
-  const [editing,  setEditing]  = useState(false);
-  const [name,     setName]     = useState(song.name);
-  const [expanded, setExpanded] = useState(false);
-  const [cursor,   setCursor]   = useState(0);
+function SongCard({ song, onOpen, onDelete, onRename }) {
+  const [editing, setEditing] = useState(false);
+  const [name,    setName]    = useState(song.name);
 
   function commitRename() {
     if (name.trim()) onRename(song.id, name);
     setEditing(false);
   }
 
-  function toggle() {
-    if (!editing) {
-      setExpanded(e => !e);
-      setCursor(0);
-    }
-  }
-
-  const noteCount   = song.notes.length;
-  const currentNote = song.notes[cursor] ?? null;
+  const noteCount = song.notes.length;
 
   return (
     <div className="song-card">
-      {/* Header row */}
-      <div className="song-card-header" onClick={toggle}>
+      <div className="song-card-header" onClick={() => !editing && onOpen(song)}>
         <div className="song-card-left">
           {editing ? (
             <input
@@ -142,47 +129,11 @@ function SongCard({ song, onDelete, onRename }) {
         </div>
 
         <div className="song-card-actions">
-          <button
-            className="icon-btn"
-            title="Rename"
-            onClick={e => { e.stopPropagation(); setEditing(v => !v); }}
-          >✏️</button>
-          <button
-            className="icon-btn"
-            title="Delete"
-            onClick={e => { e.stopPropagation(); onDelete(song.id); }}
-          >🗑️</button>
-          <span className="song-card-chevron">{expanded ? '▲' : '▼'}</span>
+          <button className="icon-btn" title="Rename" onClick={e => { e.stopPropagation(); setEditing(v => !v); }}>✏️</button>
+          <button className="icon-btn" title="Delete" onClick={e => { e.stopPropagation(); onDelete(song.id); }}>🗑️</button>
+          <span className="song-card-chevron">›</span>
         </div>
       </div>
-
-      {/* Expanded viewer */}
-      {expanded && noteCount > 0 && (
-        <div className="song-card-viewer">
-          <SheetMusic notes={song.notes} highlightIndex={cursor} />
-
-          <PianoKeyboard expectedNote={currentNote} />
-
-          {/* Step navigator */}
-          <div className="song-nav">
-            <button
-              className="song-nav-btn"
-              onClick={() => setCursor(c => Math.max(0, c - 1))}
-              disabled={cursor === 0}
-            >‹</button>
-            <span className="song-nav-label">
-              <strong>{currentNote?.name}</strong>
-              <span className="song-nav-octave">{currentNote?.octave}</span>
-              <span className="song-nav-pos">{cursor + 1} / {noteCount}</span>
-            </span>
-            <button
-              className="song-nav-btn"
-              onClick={() => setCursor(c => Math.min(noteCount - 1, c + 1))}
-              disabled={cursor === noteCount - 1}
-            >›</button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -219,7 +170,7 @@ function ServerSetup({ apiUrl, onSave, error }) {
   );
 }
 
-export function SongLibrary({ songs, loading, error, apiUrl, onSetApiUrl, onDelete, onRename }) {
+export function SongLibrary({ songs, loading, error, apiUrl, onSetApiUrl, onOpen, onDelete, onRename }) {
   const [editingUrl, setEditingUrl] = useState(false);
 
   if (loading) {
@@ -255,6 +206,7 @@ export function SongLibrary({ songs, loading, error, apiUrl, onSetApiUrl, onDele
             <SongCard
               key={song.id}
               song={song}
+              onOpen={onOpen}
               onDelete={onDelete}
               onRename={onRename}
             />
