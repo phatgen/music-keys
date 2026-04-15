@@ -7,7 +7,7 @@ import { useSongLibrary, SongLibrary } from './SongLibrary';
 import './App.css';
 
 export default function App() {
-  const { note, history, isListening, isRequesting, error, volBarRef, debugRef, start, stop, clearHistory } = usePitchDetector();
+  const { note, history, isListening, isRequesting, status, error, volBarRef, debugRef, start, stop, clearHistory } = usePitchDetector();
   const { songs, saveSong, deleteSong, renameSong } = useSongLibrary();
 
   const [tab,      setTab]      = useState('listen');
@@ -37,7 +37,8 @@ export default function App() {
   }
 
   // Label and style for the start/stop/requesting button
-  const ctrlLabel = isRequesting ? '⏳ Waiting for mic…'
+  const ctrlLabel = status === 'loading'  ? '⏳ Loading model…'
+                  : isRequesting ? '⏳ Waiting for mic…'
                   : isListening  ? '⏹ Stop'
                   :                '🎵 Start Listening';
   const ctrlClass = isRequesting ? 'btn-requesting'

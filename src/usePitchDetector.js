@@ -1,14 +1,19 @@
 import { useRef, useState, useCallback } from 'react';
-import { PitchDetector } from 'pitchy';
 
-// Sharps round DOWN to the natural note below (C# → C, F# → F, etc.)
+// ml5 is loaded via CDN script tag in index.html — access via window.ml5
+const getML5 = () => window.ml5;
+
+// CREPE model hosted on the ml5 CDN
+const CREPE_MODEL = 'https://cdn.jsdelivr.net/gh/ml5js/ml5-data-and-models/models/pitch-detection/crepe/';
+
+// Sharps round DOWN to nearest natural note (C#→C, F#→F, etc.)
 const CHROMA_TO_NATURAL = ['C','C','D','D','E','F','F','G','G','A','A','B'];
 
 function freqToNaturalNote(freq) {
   if (!freq || freq <= 0) return null;
-  const midi = Math.round(12 * Math.log2(freq / 440) + 69);
+  const midi   = Math.round(12 * Math.log2(freq / 440) + 69);
   const chroma = ((midi % 12) + 12) % 12;
-  const name = CHROMA_TO_NATURAL[chroma];
+  const name   = CHROMA_TO_NATURAL[chroma];
   const octave = Math.floor(midi / 12) - 1;
   return { name, octave };
 }
@@ -19,56 +24,52 @@ function getRMS(buffer) {
   return Math.sqrt(sum / buffer.length);
 }
 
-const MIN_RMS       = 0.005;
-const MIN_CLARITY   = 0.50;    // lowered — melody from speakers has weaker clarity than bass
-const HISTORY_MAX   = 80;
-const FREQ_MIN      = 150;     // Hz — still blocks the 50-70 Hz bass
-const FREQ_MAX      = 2200;
+const HISTORY_MAX    = 80;
+const FREQ_MIN       = 150;   // Hz — still blocks bass rumble
+const FREQ_MAX       = 2200;  // Hz
 
-// Voting window: collect the last VOTE_WINDOW detected notes and emit
-// whichever note wins VOTE_THRESHOLD of them. This tolerates occasional
-// bad frames without resetting the whole stability counter.
-const VOTE_WINDOW    = 8;
-const VOTE_THRESHOLD = 5;
+// CREPE runs slower than 60fps, so a smaller voting window still gives ~200ms of context
+const VOTE_WINDOW    = 5;
+const VOTE_THRESHOLD = 3;
 
 export function usePitchDetector() {
-  const [note, setNote] = useState(null);
+  const [note,    setNote]    = useState(null);
   const [history, setHistory] = useState([]);
-  const [status, setStatus] = useState('idle');
-  const [error, setError] = useState(null);
-  const volBarRef  = useRef(null);  // direct DOM ref for the volume bar
-  const debugRef   = useRef(null);  // direct DOM ref for raw debug text
+  // idle | requesting | loading | listening | error
+  const [status,  setStatus]  = useState('idle');
+  const [error,   setError]   = useState(null);
 
-  const audioCtxRef   = useRef(null);
-  const analyserRef   = useRef(null);
+  const pitchRef      = useRef(null);   // ml5 pitch detector
   const streamRef     = useRef(null);
-  const rafRef        = useRef(null);
-  const detectorRef   = useRef(null);
+  const audioCtxRef   = useRef(null);
+  const analyserRef   = useRef(null);   // separate analyser just for the volume bar
   const bufferRef     = useRef(null);
-  const voteBufferRef = useRef([]);      // rolling window of recent note keys
-  const lastEmitRef   = useRef(null);   // last key added to history
+  const detectingRef  = useRef(false);  // guard to stop the callback loop on stop()
+  const voteBufferRef = useRef([]);
+  const lastEmitRef   = useRef(null);
+  const volBarRef     = useRef(null);
+  const debugRef      = useRef(null);
 
   const stop = useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    if (audioCtxRef.current) audioCtxRef.current.close();
+    detectingRef.current = false;
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    audioCtxRef.current = null;
-    analyserRef.current  = null;
+    if (audioCtxRef.current) audioCtxRef.current.close();
     streamRef.current    = null;
-    rafRef.current       = null;
-    detectorRef.current  = null;
+    audioCtxRef.current  = null;
+    analyserRef.current  = null;
     bufferRef.current    = null;
+    pitchRef.current     = null;
     voteBufferRef.current = [];
+    lastEmitRef.current  = null;
     setStatus('idle');
+    setNote(null);
   }, []);
 
   const start = useCallback(async () => {
     setError(null);
-    setStatus('requesting'); // show "waiting for permission…" immediately
+    setStatus('requesting');
     try {
-      // Try with processing disabled first (better for music).
-      // Some Windows drivers silently return a dead stream with these constraints,
-      // so if we detect silence for 2 seconds we fall back to default constraints.
+      // Get mic stream with audio processing disabled for music
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -81,97 +82,74 @@ export function usePitchDetector() {
       streamRef.current = stream;
 
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) throw new Error('Web Audio is not supported in this browser');
+      if (!AudioCtx) throw new Error('Web Audio not supported in this browser');
       const audioCtx = new AudioCtx();
       audioCtxRef.current = audioCtx;
-
-      // iOS Safari creates the AudioContext in a suspended state even inside a
-      // user-gesture handler. Resume it explicitly before doing anything else.
       if (audioCtx.state === 'suspended') await audioCtx.resume();
 
-      const source = audioCtx.createMediaStreamSource(stream);
-
-      // Bandpass: strip bass frequencies (< 180 Hz) and very high harmonics (> 2500 Hz).
-      // This is the single biggest improvement for multi-instrument music — cuts drums,
-      // bass guitar, and noise that confuses the pitch detector.
-      const hp = audioCtx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 180;
-      hp.Q.value = 0.5;
-
-      const lp = audioCtx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 2500;
-      lp.Q.value = 0.5;
-
+      // Separate analyser branch just for the volume bar animation
+      const source  = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 2048;
+      analyser.fftSize = 1024;
+      source.connect(analyser);
       analyserRef.current = analyser;
-
-      source.connect(hp);
-      hp.connect(lp);
-      lp.connect(analyser);
-
       bufferRef.current   = new Float32Array(analyser.fftSize);
-      detectorRef.current = PitchDetector.forFloat32Array(analyser.fftSize);
 
-      setStatus('listening');
-
-      // If the mic gives us nothing but silence for 2s, warn the user.
-      let silentFrames = 0;
-      const SILENT_FRAME_LIMIT = 120; // ~2s at 60fps
-
-      function detect() {
+      // Animate the volume bar independently of pitch detection
+      function animateVolume() {
+        if (!analyserRef.current) return;
         analyserRef.current.getFloatTimeDomainData(bufferRef.current);
         const rms = getRMS(bufferRef.current);
-
-        // Update the volume bar directly — bypasses React batching for smooth 60fps animation.
         if (volBarRef.current) {
           volBarRef.current.style.width = `${Math.min(100, rms / 0.1 * 100)}%`;
         }
+        requestAnimationFrame(animateVolume);
+      }
+      requestAnimationFrame(animateVolume);
 
-        if (rms < 0.001) {
-          silentFrames++;
-          if (silentFrames === SILENT_FRAME_LIMIT) {
-            setError('Mic is connected but picking up no sound. In Chrome, click the 🔒 icon in the address bar → Site settings → Microphone, make sure the correct device is selected.');
-          }
-        } else {
-          silentFrames = 0;
-        }
+      // Load CREPE model (takes a few seconds on first load)
+      setStatus('loading');
+      if (debugRef.current) debugRef.current.textContent = 'Loading CREPE model…';
 
-        if (rms > MIN_RMS) {
-          setError(null);
+      const ml5 = getML5();
+      if (!ml5) throw new Error('ml5 library not loaded — check your internet connection and refresh.');
 
-          const [freq, clarity] = detectorRef.current.findPitch(
-            bufferRef.current, audioCtx.sampleRate
-          );
+      const pitch = await new Promise((resolve, reject) => {
+        const p = ml5.pitchDetection(CREPE_MODEL, audioCtx, stream, (err) => {
+          if (err) reject(new Error(`Model load failed: ${err}`));
+          else resolve(p);
+        });
+      });
+      pitchRef.current   = pitch;
+      detectingRef.current = true;
+      setStatus('listening');
 
-          if (debugRef.current) {
-            const freqStr     = freq    ? `${Math.round(freq)} Hz` : '—';
-            const clarityStr  = clarity ? clarity.toFixed(2)       : '—';
-            const rmsStr      = rms.toFixed(4);
-            const passing     = clarity > MIN_CLARITY && freq >= FREQ_MIN && freq <= FREQ_MAX;
-            debugRef.current.textContent = `rms ${rmsStr}  freq ${freqStr}  clarity ${clarityStr}  ${passing ? '✓ passing' : '✗ filtered'}`;
-          }
+      // Callback loop — CREPE calls back when each inference is done (~20-30/s)
+      function detect() {
+        if (!detectingRef.current) return;
 
-          if (clarity > MIN_CLARITY && freq >= FREQ_MIN && freq <= FREQ_MAX) {
-            const detected = freqToNaturalNote(freq);
+        pitch.getPitch((err, frequency) => {
+          if (!detectingRef.current) return;
+
+          if (frequency && frequency >= FREQ_MIN && frequency <= FREQ_MAX) {
+            if (debugRef.current) {
+              debugRef.current.textContent = `${Math.round(frequency)} Hz ✓`;
+            }
+
+            const detected = freqToNaturalNote(frequency);
             if (detected) {
               const key = `${detected.name}${detected.octave}`;
 
-              // Add to voting window
               const buf = voteBufferRef.current;
               buf.push(key);
               if (buf.length > VOTE_WINDOW) buf.shift();
 
-              // Tally votes — find the most common note in the window
               const counts = {};
               for (const k of buf) counts[k] = (counts[k] || 0) + 1;
               const [topKey, topCount] = Object.entries(counts)
                 .sort((a, b) => b[1] - a[1])[0];
 
               if (topCount >= VOTE_THRESHOLD) {
-                // Parse key back to name + octave (key format is e.g. "C4", "B3")
                 const name   = topKey.slice(0, -1);
                 const octave = parseInt(topKey.slice(-1));
                 const winner = { name, octave };
@@ -181,32 +159,34 @@ export function usePitchDetector() {
                   lastEmitRef.current = topKey;
                   setHistory(prev => {
                     const next = [...prev, winner];
-                    return next.length > HISTORY_MAX
-                      ? next.slice(next.length - HISTORY_MAX)
-                      : next;
+                    return next.length > HISTORY_MAX ? next.slice(-HISTORY_MAX) : next;
                   });
                 }
               }
             }
+          } else {
+            // No pitch / out of range — treat as silence
+            voteBufferRef.current = [];
+            lastEmitRef.current   = null;
+            setNote(null);
+            if (debugRef.current && frequency) {
+              debugRef.current.textContent = `${Math.round(frequency)} Hz ✗ out of range`;
+            } else if (debugRef.current) {
+              debugRef.current.textContent = 'no pitch detected';
+            }
           }
-        } else {
-          // Silence — clear the vote buffer so the same note after a rest
-          // registers as a new arrival
-          voteBufferRef.current = [];
-          lastEmitRef.current   = null;
-          setNote(null);
-        }
 
-        rafRef.current = requestAnimationFrame(detect);
+          detect(); // schedule next inference
+        });
       }
 
-      rafRef.current = requestAnimationFrame(detect);
+      detect();
     } catch (err) {
       const msg = err.name === 'NotAllowedError'
-        ? 'Microphone permission denied. Tap the lock icon in your browser address bar and allow microphone access, then try again.'
+        ? 'Microphone permission denied. Check the 🔒 icon in the address bar.'
         : err.name === 'NotFoundError'
         ? 'No microphone found on this device.'
-        : err.message || 'Could not access microphone';
+        : err.message || 'Could not start';
       setError(msg);
       setStatus('error');
     }
@@ -218,7 +198,10 @@ export function usePitchDetector() {
   }, []);
 
   const isListening  = status === 'listening';
-  const isRequesting = status === 'requesting';
+  const isRequesting = status === 'requesting' || status === 'loading';
 
-  return { note, history, isListening, isRequesting, status, error, volBarRef, debugRef, start, stop, clearHistory };
+  return {
+    note, history, isListening, isRequesting, status,
+    error, volBarRef, debugRef, start, stop, clearHistory,
+  };
 }
