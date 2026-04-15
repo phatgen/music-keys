@@ -443,6 +443,62 @@ h1 {
   flex: 1;
 }
 
+.song-list-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* Server URL footer */
+.server-footer {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 0.5rem 0 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.server-footer-url {
+  font-family: monospace;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.server-footer-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+/* Server setup / error screen */
+.server-error-msg {
+  color: var(--accent2);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.server-url-hint {
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 320px;
+  text-align: center;
+}
+
+.server-url-input {
+  width: 100%;
+  max-width: 360px;
+  font-size: 0.85rem;
+}
+
 .library-empty {
   text-align: center;
   color: var(--muted);

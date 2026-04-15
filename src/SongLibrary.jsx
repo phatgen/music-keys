@@ -1,31 +1,47 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-// Set VITE_API_URL in .env.local to point at your server.
-// Falls back to localhost for local development.
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL_KEY     = 'piano-helper-api-url';
+const DEFAULT_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+function storedApiUrl() {
+  return localStorage.getItem(API_URL_KEY) || DEFAULT_API_URL;
+}
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useSongLibrary() {
-  const [songs,   setSongs]   = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState(null);
+  // API URL is read from localStorage at runtime — no rebuild needed to change it
+  const [apiUrl,  setApiUrlState] = useState(storedApiUrl);
+  const [songs,   setSongs]       = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error,   setError]       = useState(null);
 
-  // Cache a ref to songs for rollback in optimistic updates
-  const songsRef = useRef(songs);
-  useEffect(() => { songsRef.current = songs; }, [songs]);
+  // Refs so callbacks always see the latest values without being recreated
+  const apiUrlRef = useRef(apiUrl);
+  const songsRef  = useRef(songs);
+  useEffect(() => { apiUrlRef.current = apiUrl; },  [apiUrl]);
+  useEffect(() => { songsRef.current  = songs; },   [songs]);
 
-  // Initial load
+  // Refetch whenever the URL changes
   useEffect(() => {
-    fetch(`${API}/api/songs`)
+    setLoading(true);
+    setError(null);
+    fetch(`${apiUrl}/api/songs`)
       .then(r => { if (!r.ok) throw new Error(`Server responded ${r.status}`); return r.json(); })
       .then(data => { setSongs(data); setLoading(false); })
       .catch(err => { setError(err.message); setLoading(false); });
+  }, [apiUrl]);
+
+  // Persist + apply a new API URL (called from the settings UI)
+  const setApiUrl = useCallback((url) => {
+    const clean = url.trim().replace(/\/$/, '');
+    localStorage.setItem(API_URL_KEY, clean);
+    setApiUrlState(clean);
   }, []);
 
-  // Optimistic save — adds to state immediately, corrects id once server replies
+  // Optimistic save
   const saveSong = useCallback((name, notes) => {
-    const tempId   = -(Date.now()); // negative so it can't collide with server ids
+    const tempId   = -(Date.now());
     const tempSong = {
       id: tempId,
       name: name?.trim() || 'Untitled Song',
@@ -36,14 +52,14 @@ export function useSongLibrary() {
     };
     setSongs(prev => [tempSong, ...prev]);
 
-    fetch(`${API}/api/songs`, {
+    fetch(`${apiUrlRef.current}/api/songs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: tempSong.name, notes }),
     })
       .then(r => r.json())
       .then(saved => setSongs(prev => prev.map(s => s.id === tempId ? saved : s)))
-      .catch(() => setSongs(prev => prev.filter(s => s.id !== tempId))); // rollback
+      .catch(() => setSongs(prev => prev.filter(s => s.id !== tempId)));
   }, []);
 
   // Optimistic delete
@@ -51,7 +67,7 @@ export function useSongLibrary() {
     const backup = songsRef.current.find(s => s.id === id);
     setSongs(prev => prev.filter(s => s.id !== id));
 
-    fetch(`${API}/api/songs/${id}`, { method: 'DELETE' })
+    fetch(`${apiUrlRef.current}/api/songs/${id}`, { method: 'DELETE' })
       .catch(() => {
         if (backup) setSongs(prev => [backup, ...prev].sort((a, b) => b.id - a.id));
       });
@@ -64,7 +80,7 @@ export function useSongLibrary() {
     const backup = songsRef.current.find(s => s.id === id);
     setSongs(prev => prev.map(s => s.id === id ? { ...s, name: trimmed } : s));
 
-    fetch(`${API}/api/songs/${id}`, {
+    fetch(`${apiUrlRef.current}/api/songs/${id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: trimmed }),
@@ -76,7 +92,7 @@ export function useSongLibrary() {
       });
   }, []);
 
-  return { songs, loading, error, saveSong, deleteSong, renameSong };
+  return { songs, loading, error, apiUrl, setApiUrl, saveSong, deleteSong, renameSong };
 }
 
 // ── Single song card ─────────────────────────────────────────────────────────
@@ -143,7 +159,39 @@ function SongCard({ song, onDelete, onRename }) {
 
 // ── Library panel ─────────────────────────────────────────────────────────────
 
-export function SongLibrary({ songs, loading, error, onDelete, onRename }) {
+function ServerSetup({ apiUrl, onSave, error }) {
+  const [val, setVal] = useState(apiUrl);
+  return (
+    <div className="library-empty">
+      <div className="library-empty-icon">{error ? '⚠️' : '🔌'}</div>
+      {error
+        ? <p className="server-error-msg">Could not connect to server</p>
+        : <p className="server-error-msg">Set your server URL</p>
+      }
+      <p className="server-url-hint">
+        {error
+          ? 'Check the URL below or deploy the Cloudflare Worker in the worker/ folder.'
+          : 'Enter the URL of your Cloudflare Worker or local server.'}
+      </p>
+      <input
+        className="save-input server-url-input"
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && onSave(val)}
+        placeholder="https://piano-helper-api.you.workers.dev"
+        spellCheck={false}
+        autoCapitalize="none"
+      />
+      <button className="btn-confirm" onClick={() => onSave(val)} disabled={!val.trim()}>
+        Connect
+      </button>
+    </div>
+  );
+}
+
+export function SongLibrary({ songs, loading, error, apiUrl, onSetApiUrl, onDelete, onRename }) {
+  const [editingUrl, setEditingUrl] = useState(false);
+
   if (loading) {
     return (
       <div className="library-empty">
@@ -153,39 +201,40 @@ export function SongLibrary({ songs, loading, error, onDelete, onRename }) {
     );
   }
 
-  if (error) {
+  if (error || editingUrl) {
     return (
-      <div className="library-empty">
-        <div className="library-empty-icon">⚠️</div>
-        <p style={{ color: 'var(--accent2)' }}>Could not connect to server</p>
-        <p style={{ fontSize: '0.8rem', marginTop: '0.5rem' }}>{error}</p>
-        <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.5rem' }}>
-          Run <code>npm start</code> inside the <code>server/</code> folder.
-        </p>
-      </div>
-    );
-  }
-
-  if (songs.length === 0) {
-    return (
-      <div className="library-empty">
-        <div className="library-empty-icon">🎵</div>
-        <p>No saved songs yet.</p>
-        <p>Start listening to some music and tap <strong>Save Song</strong> to keep a note sequence.</p>
-      </div>
+      <ServerSetup
+        apiUrl={apiUrl}
+        error={error}
+        onSave={url => { onSetApiUrl(url); setEditingUrl(false); }}
+      />
     );
   }
 
   return (
-    <div className="song-list">
-      {songs.map(song => (
-        <SongCard
-          key={song.id}
-          song={song}
-          onDelete={onDelete}
-          onRename={onRename}
-        />
-      ))}
+    <div className="song-list-wrap">
+      {songs.length === 0 ? (
+        <div className="library-empty">
+          <div className="library-empty-icon">🎵</div>
+          <p>No saved songs yet.</p>
+          <p>Start listening to some music and tap <strong>Save Song</strong> to keep a note sequence.</p>
+        </div>
+      ) : (
+        <div className="song-list">
+          {songs.map(song => (
+            <SongCard
+              key={song.id}
+              song={song}
+              onDelete={onDelete}
+              onRename={onRename}
+            />
+          ))}
+        </div>
+      )}
+      <p className="server-footer">
+        Server: <span className="server-footer-url">{apiUrl}</span>
+        <button className="server-footer-btn" onClick={() => setEditingUrl(true)}>change</button>
+      </p>
     </div>
   );
 }
