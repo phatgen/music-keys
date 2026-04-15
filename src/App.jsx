@@ -104,18 +104,7 @@ export default function App() {
             }
           </div>
 
-          {/* Sheet music — only visible once we have notes */}
-          {history.length > 0 && (
-            <section className="card">
-              <div className="card-label">Sheet Music</div>
-              <SheetMusic notes={history} />
-            </section>
-          )}
-
-          {/* Piano keyboard */}
-          <PianoKeyboard activeNote={note} />
-
-          {/* Note history strip */}
+          {/* Note history strip — top priority, visible without scrolling */}
           <section className="card">
             <div className="history-header">
               <span className="card-label">Notes heard</span>
@@ -134,6 +123,17 @@ export default function App() {
             </div>
             <NoteHistory history={history} />
           </section>
+
+          {/* Sheet music */}
+          {history.length > 0 && (
+            <section className="card">
+              <div className="card-label">Sheet Music</div>
+              <SheetMusic notes={history} />
+            </section>
+          )}
+
+          {/* Piano keyboard */}
+          <PianoKeyboard activeNote={note} />
 
           {/* Start / Stop / Requesting */}
           <div className="controls">

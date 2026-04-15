@@ -61,7 +61,16 @@ export function usePitchDetector() {
     setError(null);
     setStatus('requesting'); // show "waiting for permission…" immediately
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      // Disable browser audio processing — echo cancellation and noise suppression
+      // are designed for voice calls and will aggressively filter out music.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+        video: false,
+      });
       streamRef.current = stream;
 
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
