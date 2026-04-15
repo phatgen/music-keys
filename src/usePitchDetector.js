@@ -29,7 +29,7 @@ const FREQ_MAX = 2200;         // Hz  — cuts high harmonics / cymbal noise
 export function usePitchDetector() {
   const [note, setNote] = useState(null);
   const [history, setHistory] = useState([]);
-  const [isListening, setIsListening] = useState(false);
+  const [status, setStatus] = useState('idle'); // 'idle' | 'requesting' | 'listening' | 'error'
   const [error, setError] = useState(null);
 
   const audioCtxRef   = useRef(null);
@@ -54,17 +54,24 @@ export function usePitchDetector() {
     bufferRef.current   = null;
     candidateRef.current = null;
     stabilityRef.current = 0;
-    setIsListening(false);
+    setStatus('idle');
   }, []);
 
   const start = useCallback(async () => {
     setError(null);
+    setStatus('requesting'); // show "waiting for permission…" immediately
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       streamRef.current = stream;
 
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) throw new Error('Web Audio is not supported in this browser');
+      const audioCtx = new AudioCtx();
       audioCtxRef.current = audioCtx;
+
+      // iOS Safari creates the AudioContext in a suspended state even inside a
+      // user-gesture handler. Resume it explicitly before doing anything else.
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
 
       const source = audioCtx.createMediaStreamSource(stream);
 
@@ -92,7 +99,7 @@ export function usePitchDetector() {
       bufferRef.current   = new Float32Array(analyser.fftSize);
       detectorRef.current = PitchDetector.forFloat32Array(analyser.fftSize);
 
-      setIsListening(true);
+      setStatus('listening');
 
       function detect() {
         analyserRef.current.getFloatTimeDomainData(bufferRef.current);
@@ -144,8 +151,13 @@ export function usePitchDetector() {
 
       rafRef.current = requestAnimationFrame(detect);
     } catch (err) {
-      setError(err.message || 'Could not access microphone');
-      setIsListening(false);
+      const msg = err.name === 'NotAllowedError'
+        ? 'Microphone permission denied. Tap the lock icon in your browser address bar and allow microphone access, then try again.'
+        : err.name === 'NotFoundError'
+        ? 'No microphone found on this device.'
+        : err.message || 'Could not access microphone';
+      setError(msg);
+      setStatus('error');
     }
   }, []);
 
@@ -154,5 +166,8 @@ export function usePitchDetector() {
     lastEmitRef.current = null;
   }, []);
 
-  return { note, history, isListening, error, start, stop, clearHistory };
+  const isListening  = status === 'listening';
+  const isRequesting = status === 'requesting';
+
+  return { note, history, isListening, isRequesting, status, error, start, stop, clearHistory };
 }

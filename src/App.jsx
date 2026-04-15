@@ -7,15 +7,14 @@ import { useSongLibrary, SongLibrary } from './SongLibrary';
 import './App.css';
 
 export default function App() {
-  const { note, history, isListening, error, start, stop, clearHistory } = usePitchDetector();
+  const { note, history, isListening, isRequesting, error, start, stop, clearHistory } = usePitchDetector();
   const { songs, saveSong, deleteSong, renameSong } = useSongLibrary();
 
-  const [tab,      setTab]      = useState('listen');  // 'listen' | 'library'
+  const [tab,      setTab]      = useState('listen');
   const [saving,   setSaving]   = useState(false);
   const [saveName, setSaveName] = useState('');
   const saveInputRef = useRef(null);
 
-  // Focus the save name input when the dialog opens
   useEffect(() => {
     if (saving && saveInputRef.current) saveInputRef.current.focus();
   }, [saving]);
@@ -30,13 +29,20 @@ export default function App() {
     saveSong(saveName, [...history]);
     setSaving(false);
     clearHistory();
-    // Switch to library so they can see it was saved
     setTab('library');
   }
 
   function cancelSave() {
     setSaving(false);
   }
+
+  // Label and style for the start/stop/requesting button
+  const ctrlLabel = isRequesting ? '⏳ Waiting for mic…'
+                  : isListening  ? '⏹ Stop'
+                  :                '🎵 Start Listening';
+  const ctrlClass = isRequesting ? 'btn-requesting'
+                  : isListening  ? 'btn-stop'
+                  :                'btn-start';
 
   return (
     <div className="app">
@@ -48,6 +54,11 @@ export default function App() {
           {isListening && (
             <span className="listening-badge">
               <span className="pulse-dot" /> Listening
+            </span>
+          )}
+          {isRequesting && (
+            <span className="listening-badge requesting-badge">
+              Allow mic in browser…
             </span>
           )}
         </div>
@@ -72,12 +83,24 @@ export default function App() {
       {/* ══════════════════════════════════════════════════════════ LISTEN TAB */}
       {tab === 'listen' && (
         <>
+          {/* Error — sits right below the header so it's always visible */}
+          {error && (
+            <div className="error-banner">
+              <strong>⚠️ Microphone problem</strong>
+              <p>{error}</p>
+            </div>
+          )}
+
           {/* Big current note */}
           <div className={`note-display ${note ? 'note-display-active' : ''}`}>
             <span className="note-name">{note ? note.name : '—'}</span>
             {note
               ? <span className="note-sub">octave {note.octave}</span>
-              : <span className="note-sub">{isListening ? 'listening for notes…' : 'tap Start to begin'}</span>
+              : <span className="note-sub">
+                  {isRequesting ? 'waiting for microphone permission…'
+                  : isListening  ? 'listening for notes…'
+                  :                'tap Start to begin'}
+                </span>
             }
           </div>
 
@@ -112,20 +135,19 @@ export default function App() {
             <NoteHistory history={history} />
           </section>
 
-          {/* Error */}
-          {error && <div className="error-banner">⚠️ {error}</div>}
-
-          {/* Start / Stop */}
+          {/* Start / Stop / Requesting */}
           <div className="controls">
-            {!isListening
-              ? <button className="btn-start" onClick={start}>🎵 Start Listening</button>
-              : <button className="btn-stop"  onClick={stop}>⏹ Stop</button>
-            }
+            <button
+              className={ctrlClass}
+              onClick={isListening ? stop : isRequesting ? undefined : start}
+              disabled={isRequesting}
+            >
+              {ctrlLabel}
+            </button>
           </div>
 
           <p className="app-footer">
-            Shows natural notes only (no sharps) · Best with melody held close to mic ·
-            Full band music is approximate
+            Natural notes only · Best with melody close to mic · Full band music is approximate
           </p>
         </>
       )}

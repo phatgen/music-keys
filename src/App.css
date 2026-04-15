@@ -80,6 +80,12 @@ h1 {
   padding: 2px 8px 2px 6px;
 }
 
+.requesting-badge {
+  color: var(--muted);
+  background: rgba(122,127,154,.12);
+  border-color: rgba(122,127,154,.3);
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: 0.4; transform: scale(0.7); }
@@ -341,10 +347,16 @@ h1 {
   border: 1px solid #7a2a2a;
   border-radius: var(--radius);
   color: #ffaaaa;
-  padding: 0.75rem 1rem;
-  font-size: 0.9rem;
-  text-align: center;
+  padding: 0.85rem 1rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
 }
+.error-banner strong {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.95rem;
+}
+.error-banner p { margin: 0; }
 
 /* ── Controls (sticky bottom) ─────────────────────────────── */
 .controls {
@@ -383,6 +395,14 @@ h1 {
   background: var(--surface2);
   color: var(--accent2);
   border: 2px solid var(--accent2);
+}
+
+.btn-requesting {
+  background: var(--surface2);
+  color: var(--muted);
+  border: 2px solid var(--muted);
+  opacity: 0.8;
+  cursor: default;
 }
 
 /* ── Footer note ──────────────────────────────────────────── */
