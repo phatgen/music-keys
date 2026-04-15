@@ -5,18 +5,22 @@
 const WHITE_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const BLACK_POSITIONS = { 'C#': 0, 'D#': 1, 'F#': 3, 'G#': 4, 'A#': 5 }; // index between white keys
 
-function Key({ type, label, active, sharp }) {
-  const baseClass = type === 'white' ? 'key-white' : 'key-black';
-  const activeClass = active ? (type === 'white' ? 'key-white-active' : 'key-black-active') : '';
+// expected (green, pulsing) takes visual priority over active (purple)
+function Key({ type, label, active, expected }) {
+  const base = type === 'white' ? 'key-white' : 'key-black';
+  const mod  = expected ? (type === 'white' ? 'key-white-expected' : 'key-black-expected')
+             : active   ? (type === 'white' ? 'key-white-active'   : 'key-black-active')
+             : '';
   return (
-    <div className={`${baseClass} ${activeClass}`} title={label}>
+    <div className={`${base} ${mod}`} title={label}>
       {type === 'white' && <span className="key-label">{label}</span>}
     </div>
   );
 }
 
-export function PianoKeyboard({ activeNote }) {
-  // Show two octaves (C3–B4) — a range a child would use
+// activeNote  = what the mic currently hears (purple)
+// expectedNote = the note the user should play next (green, pulsing)
+export function PianoKeyboard({ activeNote, expectedNote }) {
   const octaves = [3, 4];
 
   return (
@@ -24,20 +28,20 @@ export function PianoKeyboard({ activeNote }) {
       {octaves.map(oct => (
         <div className="octave" key={oct}>
           <div className="keys-container">
-            {/* White keys */}
             {WHITE_NOTES.map(n => {
-              const active = activeNote && activeNote.name === n && activeNote.octave === oct;
+              const active   = activeNote   && activeNote.name   === n && activeNote.octave   === oct;
+              const expected = expectedNote && expectedNote.name === n && expectedNote.octave === oct;
               return (
-                <Key key={n + oct} type="white" label={n} active={active} />
+                <Key key={n + oct} type="white" label={n} active={active} expected={expected} />
               );
             })}
-            {/* Black keys overlaid */}
             {Object.entries(BLACK_POSITIONS).map(([note, pos]) => {
-              const active = activeNote && activeNote.name === note && activeNote.octave === oct;
+              const active   = activeNote   && activeNote.name   === note && activeNote.octave   === oct;
+              const expected = expectedNote && expectedNote.name === note && expectedNote.octave === oct;
               return (
                 <div
                   key={note + oct}
-                  className={`key-black ${active ? 'key-black-active' : ''}`}
+                  className={`key-black ${expected ? 'key-black-expected' : active ? 'key-black-active' : ''}`}
                   style={{ left: `calc((${pos} + 1) * (100% / 7))` }}
                   title={note}
                 />

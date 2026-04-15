@@ -54,15 +54,20 @@ function ledgerLines(step) {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function SheetMusic({ notes }) {
+export function SheetMusic({ notes, highlightIndex }) {
   const scrollRef = useRef(null);
 
-  // Auto-scroll to show the newest note
+  // highlightIndex: if provided, scroll to center that note; else scroll to end
   useEffect(() => {
-    if (scrollRef.current) {
+    if (!scrollRef.current) return;
+    if (highlightIndex !== undefined && highlightIndex !== null) {
+      const noteX    = CLEF_W + highlightIndex * NOTE_SPACING + NOTE_SPACING / 2;
+      const halfWide = scrollRef.current.clientWidth / 2;
+      scrollRef.current.scrollLeft = Math.max(0, noteX - halfWide);
+    } else {
       scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
     }
-  }, [notes]);
+  }, [notes.length, highlightIndex]);
 
   const cols    = Math.max(MIN_NOTES_W, notes.length);
   const svgW    = CLEF_W + cols * NOTE_SPACING + 16;
@@ -108,7 +113,10 @@ export function SheetMusic({ notes }) {
 
           const x       = CLEF_W + i * NOTE_SPACING + NOTE_SPACING / 2;
           const y       = stepToY(step);
-          const current = i === notes.length - 1;
+          // "current" = highlighted note; falls back to last note when no index given
+          const current = highlightIndex !== undefined && highlightIndex !== null
+            ? i === highlightIndex
+            : i === notes.length - 1;
           const stemUp  = step < 4;   // below B4 → stem goes up
           const color   = current ? '#6c63ff' : '#1a1a2e';
 

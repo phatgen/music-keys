@@ -4,6 +4,7 @@ import { PianoKeyboard } from './PianoKeyboard';
 import { NoteHistory } from './NoteHistory';
 import { SheetMusic } from './SheetMusic';
 import { useSongLibrary, SongLibrary } from './SongLibrary';
+import { PlayMode } from './PlayMode';
 import './App.css';
 
 export default function App() {
@@ -71,8 +72,14 @@ export default function App() {
             🎵 Listen
           </button>
           <button
+            className={`tab-btn ${tab === 'play' ? 'tab-active' : ''}`}
+            onClick={() => { if (isListening) stop(); setTab('play'); }}
+          >
+            🎹 Play
+          </button>
+          <button
             className={`tab-btn ${tab === 'library' ? 'tab-active' : ''}`}
-            onClick={() => setTab('library')}
+            onClick={() => { if (isListening) stop(); setTab('library'); }}
           >
             📚 Library
             {songs.length > 0 && <span className="tab-badge">{songs.length}</span>}
@@ -158,6 +165,13 @@ export default function App() {
             Natural notes only · Best with melody close to mic · Full band music is approximate
           </p>
         </>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════ PLAY TAB */}
+      {tab === 'play' && (
+        <div className="play-view">
+          <PlayMode />
+        </div>
       )}
 
       {/* ═══════════════════════════════════════════════════════ LIBRARY TAB */}
