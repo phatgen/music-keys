@@ -19,11 +19,11 @@ function getRMS(buffer) {
   return Math.sqrt(sum / buffer.length);
 }
 
-const MIN_RMS       = 0.005;   // silence threshold (lowered to catch quieter notes)
-const MIN_CLARITY   = 0.78;    // pitchy confidence — lower = more sensitive
+const MIN_RMS       = 0.005;
+const MIN_CLARITY   = 0.50;    // lowered — melody from speakers has weaker clarity than bass
 const HISTORY_MAX   = 80;
-const FREQ_MIN      = 150;     // Hz — cuts bass guitar, bass drum rumble
-const FREQ_MAX      = 2200;    // Hz — cuts high harmonics / cymbal noise
+const FREQ_MIN      = 150;     // Hz — still blocks the 50-70 Hz bass
+const FREQ_MAX      = 2200;
 
 // Voting window: collect the last VOTE_WINDOW detected notes and emit
 // whichever note wins VOTE_THRESHOLD of them. This tolerates occasional
