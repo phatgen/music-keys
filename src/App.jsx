@@ -9,7 +9,7 @@ import './App.css';
 
 export default function App() {
   const { note, history, isListening, isRequesting, status, error, volBarRef, debugRef, start, stop, clearHistory } = usePitchDetector();
-  const { songs, saveSong, deleteSong, renameSong } = useSongLibrary();
+  const { songs, loading: songsLoading, error: songsError, saveSong, deleteSong, renameSong } = useSongLibrary();
 
   const [tab,      setTab]      = useState('listen');
   const [saving,   setSaving]   = useState(false);
@@ -177,7 +177,7 @@ export default function App() {
       {/* ═══════════════════════════════════════════════════════ LIBRARY TAB */}
       {tab === 'library' && (
         <div className="library-view">
-          <SongLibrary songs={songs} onDelete={deleteSong} onRename={renameSong} />
+          <SongLibrary songs={songs} loading={songsLoading} error={songsError} onDelete={deleteSong} onRename={renameSong} />
         </div>
       )}
 

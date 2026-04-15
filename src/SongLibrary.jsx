@@ -1,41 +1,82 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
-const STORAGE_KEY = 'piano-helper-songs';
+// Set VITE_API_URL in .env.local to point at your server.
+// Falls back to localhost for local development.
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useSongLibrary() {
-  const [songs, setSongs] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [songs,   setSongs]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);
 
+  // Cache a ref to songs for rollback in optimistic updates
+  const songsRef = useRef(songs);
+  useEffect(() => { songsRef.current = songs; }, [songs]);
+
+  // Initial load
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(songs));
-  }, [songs]);
+    fetch(`${API}/api/songs`)
+      .then(r => { if (!r.ok) throw new Error(`Server responded ${r.status}`); return r.json(); })
+      .then(data => { setSongs(data); setLoading(false); })
+      .catch(err => { setError(err.message); setLoading(false); });
+  }, []);
 
-  const saveSong = (name, notes) => {
-    const song = {
-      id: Date.now(),
-      name: name.trim() || 'Untitled Song',
+  // Optimistic save — adds to state immediately, corrects id once server replies
+  const saveSong = useCallback((name, notes) => {
+    const tempId   = -(Date.now()); // negative so it can't collide with server ids
+    const tempSong = {
+      id: tempId,
+      name: name?.trim() || 'Untitled Song',
       notes,
       createdAt: new Date().toLocaleDateString(undefined, {
         month: 'short', day: 'numeric', year: 'numeric',
       }),
     };
-    setSongs(prev => [song, ...prev]);
-    return song;
-  };
+    setSongs(prev => [tempSong, ...prev]);
 
-  const deleteSong = (id) => setSongs(prev => prev.filter(s => s.id !== id));
+    fetch(`${API}/api/songs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: tempSong.name, notes }),
+    })
+      .then(r => r.json())
+      .then(saved => setSongs(prev => prev.map(s => s.id === tempId ? saved : s)))
+      .catch(() => setSongs(prev => prev.filter(s => s.id !== tempId))); // rollback
+  }, []);
 
-  const renameSong = (id, name) =>
-    setSongs(prev => prev.map(s => s.id === id ? { ...s, name: name.trim() || s.name } : s));
+  // Optimistic delete
+  const deleteSong = useCallback((id) => {
+    const backup = songsRef.current.find(s => s.id === id);
+    setSongs(prev => prev.filter(s => s.id !== id));
 
-  return { songs, saveSong, deleteSong, renameSong };
+    fetch(`${API}/api/songs/${id}`, { method: 'DELETE' })
+      .catch(() => {
+        if (backup) setSongs(prev => [backup, ...prev].sort((a, b) => b.id - a.id));
+      });
+  }, []);
+
+  // Optimistic rename
+  const renameSong = useCallback((id, name) => {
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    const backup = songsRef.current.find(s => s.id === id);
+    setSongs(prev => prev.map(s => s.id === id ? { ...s, name: trimmed } : s));
+
+    fetch(`${API}/api/songs/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: trimmed }),
+    })
+      .then(r => r.json())
+      .then(updated => setSongs(prev => prev.map(s => s.id === id ? updated : s)))
+      .catch(() => {
+        if (backup) setSongs(prev => prev.map(s => s.id === id ? backup : s));
+      });
+  }, []);
+
+  return { songs, loading, error, saveSong, deleteSong, renameSong };
 }
 
 // ── Single song card ─────────────────────────────────────────────────────────
@@ -102,7 +143,29 @@ function SongCard({ song, onDelete, onRename }) {
 
 // ── Library panel ─────────────────────────────────────────────────────────────
 
-export function SongLibrary({ songs, onDelete, onRename }) {
+export function SongLibrary({ songs, loading, error, onDelete, onRename }) {
+  if (loading) {
+    return (
+      <div className="library-empty">
+        <div className="library-empty-icon">⏳</div>
+        <p>Loading songs…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="library-empty">
+        <div className="library-empty-icon">⚠️</div>
+        <p style={{ color: 'var(--accent2)' }}>Could not connect to server</p>
+        <p style={{ fontSize: '0.8rem', marginTop: '0.5rem' }}>{error}</p>
+        <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.5rem' }}>
+          Run <code>npm start</code> inside the <code>server/</code> folder.
+        </p>
+      </div>
+    );
+  }
+
   if (songs.length === 0) {
     return (
       <div className="library-empty">

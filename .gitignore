@@ -1,3 +1,9 @@
+# Server data and local env
+server/songs.json
+server/node_modules
+.env
+.env.local
+
 # Logs
 logs
 *.log
