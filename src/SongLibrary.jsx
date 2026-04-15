@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { SheetMusic }    from './SheetMusic';
+import { PianoKeyboard } from './PianoKeyboard';
 
 const API_URL_KEY     = 'piano-helper-api-url';
 const DEFAULT_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -101,20 +103,27 @@ function SongCard({ song, onDelete, onRename }) {
   const [editing,  setEditing]  = useState(false);
   const [name,     setName]     = useState(song.name);
   const [expanded, setExpanded] = useState(false);
+  const [cursor,   setCursor]   = useState(0);
 
   function commitRename() {
     if (name.trim()) onRename(song.id, name);
     setEditing(false);
   }
 
-  // Build a compact display string: show note names only (no octave)
-  const noteNames = song.notes.map(n => n.name).join(' · ');
-  const noteCount = song.notes.length;
+  function toggle() {
+    if (!editing) {
+      setExpanded(e => !e);
+      setCursor(0);
+    }
+  }
+
+  const noteCount   = song.notes.length;
+  const currentNote = song.notes[cursor] ?? null;
 
   return (
     <div className="song-card">
       {/* Header row */}
-      <div className="song-card-header" onClick={() => !editing && setExpanded(e => !e)}>
+      <div className="song-card-header" onClick={toggle}>
         <div className="song-card-left">
           {editing ? (
             <input
@@ -147,10 +156,31 @@ function SongCard({ song, onDelete, onRename }) {
         </div>
       </div>
 
-      {/* Expanded note sequence */}
-      {expanded && (
-        <div className="song-card-notes">
-          {noteNames || '(no notes recorded)'}
+      {/* Expanded viewer */}
+      {expanded && noteCount > 0 && (
+        <div className="song-card-viewer">
+          <SheetMusic notes={song.notes} highlightIndex={cursor} />
+
+          <PianoKeyboard expectedNote={currentNote} />
+
+          {/* Step navigator */}
+          <div className="song-nav">
+            <button
+              className="song-nav-btn"
+              onClick={() => setCursor(c => Math.max(0, c - 1))}
+              disabled={cursor === 0}
+            >‹</button>
+            <span className="song-nav-label">
+              <strong>{currentNote?.name}</strong>
+              <span className="song-nav-octave">{currentNote?.octave}</span>
+              <span className="song-nav-pos">{cursor + 1} / {noteCount}</span>
+            </span>
+            <button
+              className="song-nav-btn"
+              onClick={() => setCursor(c => Math.min(noteCount - 1, c + 1))}
+              disabled={cursor === noteCount - 1}
+            >›</button>
+          </div>
         </div>
       )}
     </div>
