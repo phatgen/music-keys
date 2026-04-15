@@ -190,6 +190,14 @@ h1 {
   transition: width 0.05s linear;
 }
 
+.debug-line {
+  margin-top: 0.4rem;
+  font-size: 0.7rem;
+  font-family: monospace;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+}
+
 /* ── Cards ────────────────────────────────────────────────── */
 .card {
   background: var(--surface);

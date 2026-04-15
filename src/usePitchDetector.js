@@ -36,7 +36,8 @@ export function usePitchDetector() {
   const [history, setHistory] = useState([]);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
-  const volBarRef = useRef(null);  // direct DOM ref for the volume bar
+  const volBarRef  = useRef(null);  // direct DOM ref for the volume bar
+  const debugRef   = useRef(null);  // direct DOM ref for raw debug text
 
   const audioCtxRef   = useRef(null);
   const analyserRef   = useRef(null);
@@ -139,11 +140,19 @@ export function usePitchDetector() {
         }
 
         if (rms > MIN_RMS) {
-          setError(null); // clear the silent-mic warning once we hear something
+          setError(null);
 
           const [freq, clarity] = detectorRef.current.findPitch(
             bufferRef.current, audioCtx.sampleRate
           );
+
+          if (debugRef.current) {
+            const freqStr     = freq    ? `${Math.round(freq)} Hz` : '—';
+            const clarityStr  = clarity ? clarity.toFixed(2)       : '—';
+            const rmsStr      = rms.toFixed(4);
+            const passing     = clarity > MIN_CLARITY && freq >= FREQ_MIN && freq <= FREQ_MAX;
+            debugRef.current.textContent = `rms ${rmsStr}  freq ${freqStr}  clarity ${clarityStr}  ${passing ? '✓ passing' : '✗ filtered'}`;
+          }
 
           if (clarity > MIN_CLARITY && freq >= FREQ_MIN && freq <= FREQ_MAX) {
             const detected = freqToNaturalNote(freq);
@@ -211,5 +220,5 @@ export function usePitchDetector() {
   const isListening  = status === 'listening';
   const isRequesting = status === 'requesting';
 
-  return { note, history, isListening, isRequesting, status, error, volBarRef, start, stop, clearHistory };
+  return { note, history, isListening, isRequesting, status, error, volBarRef, debugRef, start, stop, clearHistory };
 }
