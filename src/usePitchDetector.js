@@ -19,12 +19,17 @@ function getRMS(buffer) {
   return Math.sqrt(sum / buffer.length);
 }
 
-const MIN_RMS = 0.01;          // silence / background noise threshold
-const MIN_CLARITY = 0.85;      // pitchy confidence filter (lower = more sensitive)
-const STABILITY_FRAMES = 5;    // frames (~83ms) a note must hold before emitting
-const HISTORY_MAX = 80;
-const FREQ_MIN = 150;          // Hz  — cuts bass guitar, bass drum rumble
-const FREQ_MAX = 2200;         // Hz  — cuts high harmonics / cymbal noise
+const MIN_RMS       = 0.005;   // silence threshold (lowered to catch quieter notes)
+const MIN_CLARITY   = 0.78;    // pitchy confidence — lower = more sensitive
+const HISTORY_MAX   = 80;
+const FREQ_MIN      = 150;     // Hz — cuts bass guitar, bass drum rumble
+const FREQ_MAX      = 2200;    // Hz — cuts high harmonics / cymbal noise
+
+// Voting window: collect the last VOTE_WINDOW detected notes and emit
+// whichever note wins VOTE_THRESHOLD of them. This tolerates occasional
+// bad frames without resetting the whole stability counter.
+const VOTE_WINDOW    = 8;
+const VOTE_THRESHOLD = 5;
 
 export function usePitchDetector() {
   const [note, setNote] = useState(null);
@@ -39,8 +44,7 @@ export function usePitchDetector() {
   const rafRef        = useRef(null);
   const detectorRef   = useRef(null);
   const bufferRef     = useRef(null);
-  const candidateRef  = useRef(null);   // "note4" style key of candidate note
-  const stabilityRef  = useRef(0);      // consecutive frames held
+  const voteBufferRef = useRef([]);      // rolling window of recent note keys
   const lastEmitRef   = useRef(null);   // last key added to history
 
   const stop = useCallback(() => {
@@ -48,13 +52,12 @@ export function usePitchDetector() {
     if (audioCtxRef.current) audioCtxRef.current.close();
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
     audioCtxRef.current = null;
-    analyserRef.current = null;
-    streamRef.current   = null;
-    rafRef.current      = null;
-    detectorRef.current = null;
-    bufferRef.current   = null;
-    candidateRef.current = null;
-    stabilityRef.current = 0;
+    analyserRef.current  = null;
+    streamRef.current    = null;
+    rafRef.current       = null;
+    detectorRef.current  = null;
+    bufferRef.current    = null;
+    voteBufferRef.current = [];
     setStatus('idle');
   }, []);
 
@@ -137,6 +140,7 @@ export function usePitchDetector() {
 
         if (rms > MIN_RMS) {
           setError(null); // clear the silent-mic warning once we hear something
+
           const [freq, clarity] = detectorRef.current.findPitch(
             bufferRef.current, audioCtx.sampleRate
           );
@@ -146,20 +150,28 @@ export function usePitchDetector() {
             if (detected) {
               const key = `${detected.name}${detected.octave}`;
 
-              if (candidateRef.current === key) {
-                stabilityRef.current++;
-              } else {
-                candidateRef.current = key;
-                stabilityRef.current = 1;
-              }
+              // Add to voting window
+              const buf = voteBufferRef.current;
+              buf.push(key);
+              if (buf.length > VOTE_WINDOW) buf.shift();
 
-              if (stabilityRef.current === STABILITY_FRAMES) {
-                setNote(detected);
-                // Only push to history when transitioning to a new note
-                if (lastEmitRef.current !== key) {
-                  lastEmitRef.current = key;
+              // Tally votes — find the most common note in the window
+              const counts = {};
+              for (const k of buf) counts[k] = (counts[k] || 0) + 1;
+              const [topKey, topCount] = Object.entries(counts)
+                .sort((a, b) => b[1] - a[1])[0];
+
+              if (topCount >= VOTE_THRESHOLD) {
+                // Parse key back to name + octave (key format is e.g. "C4", "B3")
+                const name   = topKey.slice(0, -1);
+                const octave = parseInt(topKey.slice(-1));
+                const winner = { name, octave };
+                setNote(winner);
+
+                if (lastEmitRef.current !== topKey) {
+                  lastEmitRef.current = topKey;
                   setHistory(prev => {
-                    const next = [...prev, detected];
+                    const next = [...prev, winner];
                     return next.length > HISTORY_MAX
                       ? next.slice(next.length - HISTORY_MAX)
                       : next;
@@ -169,11 +181,10 @@ export function usePitchDetector() {
             }
           }
         } else {
-          // Silence — reset candidate so the next note counts as a fresh arrival,
-          // even if it's the same pitch (e.g., same note played again after a rest)
-          candidateRef.current = null;
-          stabilityRef.current = 0;
-          lastEmitRef.current  = null;
+          // Silence — clear the vote buffer so the same note after a rest
+          // registers as a new arrival
+          voteBufferRef.current = [];
+          lastEmitRef.current   = null;
           setNote(null);
         }
 
