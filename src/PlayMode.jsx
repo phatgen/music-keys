@@ -117,14 +117,16 @@ function ApiKeySetup({ onSave }) {
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export function PlayMode() {
+export function PlayMode({ saveSong }) {
   const [apiKey, setApiKeyState] = useState(() => localStorage.getItem(API_KEY_STORAGE) ?? '');
 
   // phase: 'photo' | 'analyzing' | 'ready' | 'playing' | 'done'
-  const [phase,  setPhase]  = useState('photo');
-  const [notes,  setNotes]  = useState([]);
-  const [cursor, setCursor] = useState(0);
-  const [error,  setError]  = useState(null);
+  const [phase,    setPhase]    = useState('photo');
+  const [notes,    setNotes]    = useState([]);
+  const [cursor,   setCursor]   = useState(0);
+  const [error,    setError]    = useState(null);
+  const [saving,   setSaving]   = useState(false);
+  const [saveName, setSaveName] = useState('');
 
   const fileRef    = useRef(null);
   const lastAdvRef = useRef(0);
@@ -203,7 +205,18 @@ export function PlayMode() {
     setNotes([]);
     setCursor(0);
     setError(null);
+    setSaving(false);
     setPhase('photo');
+  }
+
+  function handleSaveToLibrary() {
+    setSaveName('');
+    setSaving(true);
+  }
+
+  function confirmSave() {
+    saveSong(saveName, [...notes]);
+    setSaving(false);
   }
 
   // ── No API key ─────────────────────────────────────────────────────────
@@ -215,20 +228,50 @@ export function PlayMode() {
   // ── Done ───────────────────────────────────────────────────────────────
   if (phase === 'done') {
     return (
-      <div className="play-done">
-        <div className="play-done-icon">🎉</div>
-        <h2 className="play-done-title">You played it!</h2>
-        <p className="play-done-sub">{notes.length} notes · well done!</p>
-        <section className="card">
-          <SheetMusic notes={notes} highlightIndex={notes.length - 1} />
-        </section>
-        <div className="play-done-btns">
-          <button className="btn-cancel" onClick={handleReset}>New Song</button>
-          <button className="btn-confirm" onClick={() => { setCursor(0); setPhase('ready'); }}>
-            Play Again
+      <>
+        <div className="play-done">
+          <div className="play-done-icon">🎉</div>
+          <h2 className="play-done-title">You played it!</h2>
+          <p className="play-done-sub">{notes.length} notes · well done!</p>
+          <section className="card">
+            <SheetMusic notes={notes} highlightIndex={notes.length - 1} />
+          </section>
+          <button className="btn-save-song play-save-btn" onClick={handleSaveToLibrary}>
+            💾 Save to Library
           </button>
+          <div className="play-done-btns">
+            <button className="btn-cancel" onClick={handleReset}>New Song</button>
+            <button className="btn-confirm" onClick={() => { setCursor(0); setPhase('ready'); }}>
+              Play Again
+            </button>
+          </div>
         </div>
-      </div>
+
+        {saving && (
+          <>
+            <div className="overlay-backdrop" onClick={() => setSaving(false)} />
+            <div className="save-sheet">
+              <div className="save-sheet-handle" />
+              <h3 className="save-sheet-title">Name this song</h3>
+              <input
+                className="save-input"
+                placeholder="e.g. Twinkle Twinkle"
+                value={saveName}
+                onChange={e => setSaveName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') confirmSave(); if (e.key === 'Escape') setSaving(false); }}
+                autoFocus
+              />
+              <div className="save-sheet-preview">
+                {notes.length} notes · {notes.map(n => n.name).join(' ')}
+              </div>
+              <div className="save-sheet-btns">
+                <button className="btn-cancel" onClick={() => setSaving(false)}>Cancel</button>
+                <button className="btn-confirm" onClick={confirmSave}>Save</button>
+              </div>
+            </div>
+          </>
+        )}
+      </>
     );
   }
 

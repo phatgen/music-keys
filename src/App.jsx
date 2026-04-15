@@ -170,7 +170,7 @@ export default function App() {
       {/* ════════════════════════════════════════════════════════════ PLAY TAB */}
       {tab === 'play' && (
         <div className="play-view">
-          <PlayMode />
+          <PlayMode saveSong={saveSong} />
         </div>
       )}
 
