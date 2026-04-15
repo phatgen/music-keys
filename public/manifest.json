@@ -1,0 +1,25 @@
+{
+  "name": "Piano Helper",
+  "short_name": "Piano Helper",
+  "description": "Listen to music and see the notes to play on piano",
+  "start_url": "/music-keys/",
+  "scope": "/music-keys/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1117",
+  "theme_color": "#0f1117",
+  "icons": [
+    {
+      "src": "/music-keys/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/music-keys/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
