@@ -37,8 +37,7 @@ export default function App() {
   }
 
   // Label and style for the start/stop/requesting button
-  const ctrlLabel = status === 'loading'  ? '⏳ Loading model…'
-                  : isRequesting ? '⏳ Waiting for mic…'
+  const ctrlLabel = isRequesting ? '⏳ Waiting for mic…'
                   : isListening  ? '⏹ Stop'
                   :                '🎵 Start Listening';
   const ctrlClass = isRequesting ? 'btn-requesting'

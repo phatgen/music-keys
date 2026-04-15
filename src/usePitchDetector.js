@@ -1,10 +1,5 @@
 import { useRef, useState, useCallback } from 'react';
-
-// ml5 is loaded via CDN script tag in index.html — access via window.ml5
-const getML5 = () => window.ml5;
-
-// CREPE model hosted on the ml5 CDN
-const CREPE_MODEL = 'https://cdn.jsdelivr.net/gh/ml5js/ml5-data-and-models/models/pitch-detection/crepe/';
+import { PitchDetector } from 'pitchy';
 
 // Sharps round DOWN to nearest natural note (C#→C, F#→F, etc.)
 const CHROMA_TO_NATURAL = ['C','C','D','D','E','F','F','G','G','A','A','B'];
@@ -25,26 +20,29 @@ function getRMS(buffer) {
 }
 
 const HISTORY_MAX    = 80;
-const FREQ_MIN       = 150;   // Hz — still blocks bass rumble
-const FREQ_MAX       = 2200;  // Hz
+const FFT_SIZE       = 2048;
+const MIN_RMS        = 0.005;
+const MIN_CLARITY    = 0.40;   // very permissive — melody through speakers has weak clarity
+const FREQ_MIN       = 150;    // Hz — blocks bass rumble (50-70 Hz range we measured)
+const FREQ_MAX       = 2200;   // Hz
 
-// CREPE runs slower than 60fps, so a smaller voting window still gives ~200ms of context
-const VOTE_WINDOW    = 5;
-const VOTE_THRESHOLD = 3;
+const VOTE_WINDOW    = 8;
+const VOTE_THRESHOLD = 3;      // 3/8 majority — permissive but stable
 
 export function usePitchDetector() {
   const [note,    setNote]    = useState(null);
   const [history, setHistory] = useState([]);
-  // idle | requesting | loading | listening | error
+  // idle | requesting | listening | error
   const [status,  setStatus]  = useState('idle');
   const [error,   setError]   = useState(null);
 
-  const pitchRef      = useRef(null);   // ml5 pitch detector
   const streamRef     = useRef(null);
   const audioCtxRef   = useRef(null);
-  const analyserRef   = useRef(null);   // separate analyser just for the volume bar
+  const analyserRef   = useRef(null);
   const bufferRef     = useRef(null);
-  const detectingRef  = useRef(false);  // guard to stop the callback loop on stop()
+  const detectorRef   = useRef(null);
+  const rafRef        = useRef(null);
+  const detectingRef  = useRef(false);
   const voteBufferRef = useRef([]);
   const lastEmitRef   = useRef(null);
   const volBarRef     = useRef(null);
@@ -52,13 +50,15 @@ export function usePitchDetector() {
 
   const stop = useCallback(() => {
     detectingRef.current = false;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
     if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
     if (audioCtxRef.current) audioCtxRef.current.close();
     streamRef.current    = null;
     audioCtxRef.current  = null;
     analyserRef.current  = null;
     bufferRef.current    = null;
-    pitchRef.current     = null;
+    detectorRef.current  = null;
     voteBufferRef.current = [];
     lastEmitRef.current  = null;
     setStatus('idle');
@@ -87,97 +87,103 @@ export function usePitchDetector() {
       audioCtxRef.current = audioCtx;
       if (audioCtx.state === 'suspended') await audioCtx.resume();
 
-      // Separate analyser branch just for the volume bar animation
-      const source  = audioCtx.createMediaStreamSource(stream);
+      // Build audio graph: source → highpass → analyser
+      const source = audioCtx.createMediaStreamSource(stream);
+
+      // Highpass filter to strip bass rumble below FREQ_MIN
+      const hpf = audioCtx.createBiquadFilter();
+      hpf.type = 'highpass';
+      hpf.frequency.value = FREQ_MIN;
+      hpf.Q.value = 0.7;
+
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 1024;
-      source.connect(analyser);
+      analyser.fftSize = FFT_SIZE;
+      source.connect(hpf);
+      hpf.connect(analyser);
       analyserRef.current = analyser;
-      bufferRef.current   = new Float32Array(analyser.fftSize);
 
-      // Animate the volume bar independently of pitch detection
-      function animateVolume() {
-        if (!analyserRef.current) return;
-        analyserRef.current.getFloatTimeDomainData(bufferRef.current);
-        const rms = getRMS(bufferRef.current);
-        if (volBarRef.current) {
-          volBarRef.current.style.width = `${Math.min(100, rms / 0.1 * 100)}%`;
-        }
-        requestAnimationFrame(animateVolume);
-      }
-      requestAnimationFrame(animateVolume);
+      const buffer = new Float32Array(FFT_SIZE);
+      bufferRef.current = buffer;
 
-      // Load CREPE model (takes a few seconds on first load)
-      setStatus('loading');
-      if (debugRef.current) debugRef.current.textContent = 'Loading CREPE model…';
+      detectorRef.current = PitchDetector.forFloat32Array(FFT_SIZE);
 
-      const ml5 = getML5();
-      if (!ml5) throw new Error('ml5 library not loaded — check your internet connection and refresh.');
-
-      const pitch = await new Promise((resolve, reject) => {
-        const p = ml5.pitchDetection(CREPE_MODEL, audioCtx, stream, (err) => {
-          if (err) reject(new Error(`Model load failed: ${err}`));
-          else resolve(p);
-        });
-      });
-      pitchRef.current   = pitch;
       detectingRef.current = true;
       setStatus('listening');
 
-      // Callback loop — CREPE calls back when each inference is done (~20-30/s)
       function detect() {
         if (!detectingRef.current) return;
 
-        pitch.getPitch((err, frequency) => {
-          if (!detectingRef.current) return;
+        analyser.getFloatTimeDomainData(buffer);
+        const rms = getRMS(buffer);
 
-          if (frequency && frequency >= FREQ_MIN && frequency <= FREQ_MAX) {
-            if (debugRef.current) {
-              debugRef.current.textContent = `${Math.round(frequency)} Hz ✓`;
-            }
+        // Update volume bar via DOM ref (avoids React state batching at 60fps)
+        if (volBarRef.current) {
+          volBarRef.current.style.width = `${Math.min(100, rms / 0.1 * 100)}%`;
+        }
 
-            const detected = freqToNaturalNote(frequency);
-            if (detected) {
-              const key = `${detected.name}${detected.octave}`;
+        if (rms < MIN_RMS) {
+          // Too quiet — treat as silence
+          voteBufferRef.current = [];
+          lastEmitRef.current   = null;
+          setNote(null);
+          if (debugRef.current) debugRef.current.textContent = `rms ${rms.toFixed(4)} — silent`;
+          rafRef.current = requestAnimationFrame(detect);
+          return;
+        }
 
-              const buf = voteBufferRef.current;
-              buf.push(key);
-              if (buf.length > VOTE_WINDOW) buf.shift();
+        const [frequency, clarity] = detectorRef.current.findPitch(buffer, audioCtx.sampleRate);
 
-              const counts = {};
-              for (const k of buf) counts[k] = (counts[k] || 0) + 1;
-              const [topKey, topCount] = Object.entries(counts)
-                .sort((a, b) => b[1] - a[1])[0];
+        if (debugRef.current) {
+          debugRef.current.textContent =
+            `rms ${rms.toFixed(4)} | ${Math.round(frequency)} Hz | clarity ${clarity.toFixed(2)}`;
+        }
 
-              if (topCount >= VOTE_THRESHOLD) {
-                const name   = topKey.slice(0, -1);
-                const octave = parseInt(topKey.slice(-1));
-                const winner = { name, octave };
-                setNote(winner);
-
-                if (lastEmitRef.current !== topKey) {
-                  lastEmitRef.current = topKey;
-                  setHistory(prev => {
-                    const next = [...prev, winner];
-                    return next.length > HISTORY_MAX ? next.slice(-HISTORY_MAX) : next;
-                  });
-                }
-              }
-            }
-          } else {
-            // No pitch / out of range — treat as silence
-            voteBufferRef.current = [];
-            lastEmitRef.current   = null;
-            setNote(null);
-            if (debugRef.current && frequency) {
-              debugRef.current.textContent = `${Math.round(frequency)} Hz ✗ out of range`;
-            } else if (debugRef.current) {
-              debugRef.current.textContent = 'no pitch detected';
-            }
+        if (
+          clarity >= MIN_CLARITY &&
+          frequency >= FREQ_MIN &&
+          frequency <= FREQ_MAX
+        ) {
+          if (debugRef.current) {
+            debugRef.current.textContent += ' ✓';
           }
 
-          detect(); // schedule next inference
-        });
+          const detected = freqToNaturalNote(frequency);
+          if (detected) {
+            const key = `${detected.name}${detected.octave}`;
+
+            const buf = voteBufferRef.current;
+            buf.push(key);
+            if (buf.length > VOTE_WINDOW) buf.shift();
+
+            const counts = {};
+            for (const k of buf) counts[k] = (counts[k] || 0) + 1;
+            const [topKey, topCount] = Object.entries(counts)
+              .sort((a, b) => b[1] - a[1])[0];
+
+            if (topCount >= VOTE_THRESHOLD) {
+              const name   = topKey.slice(0, -1);
+              const octave = parseInt(topKey.slice(-1));
+              const winner = { name, octave };
+              setNote(winner);
+
+              if (lastEmitRef.current !== topKey) {
+                lastEmitRef.current = topKey;
+                setHistory(prev => {
+                  const next = [...prev, winner];
+                  return next.length > HISTORY_MAX ? next.slice(-HISTORY_MAX) : next;
+                });
+              }
+            }
+          }
+        } else {
+          // Below clarity/range threshold — treat as silence
+          voteBufferRef.current = [];
+          lastEmitRef.current   = null;
+          setNote(null);
+          if (debugRef.current) debugRef.current.textContent += ' ✗';
+        }
+
+        rafRef.current = requestAnimationFrame(detect);
       }
 
       detect();
@@ -198,7 +204,7 @@ export function usePitchDetector() {
   }, []);
 
   const isListening  = status === 'listening';
-  const isRequesting = status === 'requesting' || status === 'loading';
+  const isRequesting = status === 'requesting';
 
   return {
     note, history, isListening, isRequesting, status,
