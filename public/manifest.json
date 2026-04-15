@@ -1,6 +1,6 @@
 {
-  "name": "Piano Helper",
-  "short_name": "Piano Helper",
+  "name": "Music Keys",
+  "short_name": "Music Keys",
   "description": "Listen to music and see the notes to play on piano",
   "start_url": "/music-keys/",
   "scope": "/music-keys/",

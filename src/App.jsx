@@ -51,7 +51,7 @@ export default function App() {
       {/* ── Header ── */}
       <header className="app-header">
         <div className="app-title-row">
-          <h1>Piano Helper</h1>
+          <h1>Music Keys</h1>
           {isListening && (
             <span className="listening-badge">
               <span className="pulse-dot" /> Listening
