@@ -31,6 +31,7 @@ export function usePitchDetector() {
   const [history, setHistory] = useState([]);
   const [status, setStatus] = useState('idle'); // 'idle' | 'requesting' | 'listening' | 'error'
   const [error, setError] = useState(null);
+  const [volume, setVolume] = useState(0);   // 0–1, for the debug meter
 
   const audioCtxRef   = useRef(null);
   const analyserRef   = useRef(null);
@@ -61,16 +62,18 @@ export function usePitchDetector() {
     setError(null);
     setStatus('requesting'); // show "waiting for permission…" immediately
     try {
-      // Disable browser audio processing — echo cancellation and noise suppression
-      // are designed for voice calls and will aggressively filter out music.
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-        video: false,
-      });
+      // Try with processing disabled first (better for music).
+      // Some Windows drivers silently return a dead stream with these constraints,
+      // so if we detect silence for 2 seconds we fall back to default constraints.
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+          video: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      }
       streamRef.current = stream;
 
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -110,11 +113,29 @@ export function usePitchDetector() {
 
       setStatus('listening');
 
+      // If the mic gives us nothing but silence for 2s, warn the user.
+      let silentFrames = 0;
+      const SILENT_FRAME_LIMIT = 120; // ~2s at 60fps
+
       function detect() {
         analyserRef.current.getFloatTimeDomainData(bufferRef.current);
         const rms = getRMS(bufferRef.current);
 
+        // Expose a normalised volume level (clamped 0-1) for the debug meter.
+        // Typical speech/music is ~0.02-0.2 RMS; scale so 0.1 = 100% bar.
+        setVolume(Math.min(1, rms / 0.1));
+
+        if (rms < 0.001) {
+          silentFrames++;
+          if (silentFrames === SILENT_FRAME_LIMIT) {
+            setError('Mic is connected but picking up no sound. In Chrome, click the 🔒 icon in the address bar → Site settings → Microphone, make sure the correct device is selected.');
+          }
+        } else {
+          silentFrames = 0;
+        }
+
         if (rms > MIN_RMS) {
+          setError(null); // clear the silent-mic warning once we hear something
           const [freq, clarity] = detectorRef.current.findPitch(
             bufferRef.current, audioCtx.sampleRate
           );
@@ -178,5 +199,5 @@ export function usePitchDetector() {
   const isListening  = status === 'listening';
   const isRequesting = status === 'requesting';
 
-  return { note, history, isListening, isRequesting, status, error, start, stop, clearHistory };
+  return { note, history, isListening, isRequesting, status, error, volume, start, stop, clearHistory };
 }
