@@ -7,7 +7,7 @@ import { useSongLibrary, SongLibrary } from './SongLibrary';
 import './App.css';
 
 export default function App() {
-  const { note, history, isListening, isRequesting, error, volume, start, stop, clearHistory } = usePitchDetector();
+  const { note, history, isListening, isRequesting, error, volBarRef, start, stop, clearHistory } = usePitchDetector();
   const { songs, saveSong, deleteSong, renameSong } = useSongLibrary();
 
   const [tab,      setTab]      = useState('listen');
@@ -104,7 +104,7 @@ export default function App() {
             }
             {isListening && (
               <div className="vol-meter-wrap" title="Mic volume">
-                <div className="vol-meter-bar" style={{ width: `${volume * 100}%` }} />
+                <div className="vol-meter-bar" ref={volBarRef} />
               </div>
             )}
           </div>

@@ -29,9 +29,9 @@ const FREQ_MAX = 2200;         // Hz  — cuts high harmonics / cymbal noise
 export function usePitchDetector() {
   const [note, setNote] = useState(null);
   const [history, setHistory] = useState([]);
-  const [status, setStatus] = useState('idle'); // 'idle' | 'requesting' | 'listening' | 'error'
+  const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
-  const [volume, setVolume] = useState(0);   // 0–1, for the debug meter
+  const volBarRef = useRef(null);  // direct DOM ref for the volume bar
 
   const audioCtxRef   = useRef(null);
   const analyserRef   = useRef(null);
@@ -121,9 +121,10 @@ export function usePitchDetector() {
         analyserRef.current.getFloatTimeDomainData(bufferRef.current);
         const rms = getRMS(bufferRef.current);
 
-        // Expose a normalised volume level (clamped 0-1) for the debug meter.
-        // Typical speech/music is ~0.02-0.2 RMS; scale so 0.1 = 100% bar.
-        setVolume(Math.min(1, rms / 0.1));
+        // Update the volume bar directly — bypasses React batching for smooth 60fps animation.
+        if (volBarRef.current) {
+          volBarRef.current.style.width = `${Math.min(100, rms / 0.1 * 100)}%`;
+        }
 
         if (rms < 0.001) {
           silentFrames++;
@@ -199,5 +200,5 @@ export function usePitchDetector() {
   const isListening  = status === 'listening';
   const isRequesting = status === 'requesting';
 
-  return { note, history, isListening, isRequesting, status, error, volume, start, stop, clearHistory };
+  return { note, history, isListening, isRequesting, status, error, volBarRef, start, stop, clearHistory };
 }
